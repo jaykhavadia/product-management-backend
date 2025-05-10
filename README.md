@@ -54,7 +54,7 @@ Create a `.env` file in the root directory and add the following:
 
 ```env
 PORT=5000
-MONGO_URI=your_mongodb_connection_string
+MONGO_URI=mongodb://localhost:27017/product-management
 JWT_SECRET=your_jwt_secret_key
 ```
 
