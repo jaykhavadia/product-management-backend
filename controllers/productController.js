@@ -118,17 +118,11 @@ exports.updateProduct = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Product not found" });
 
-    if (String(product.owner) !== String(req.user._id)) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Unauthorized access" });
-    }
-
     let shouldLogPriceChange = false;
     let newPrice;
 
     // PRICE VALIDATION
-    if (price !== undefined && price !== null) {
+    if (price !== undefined && price !== null && price !== product.price) {
       newPrice = parseFloat(price);
       const currentPrice = product.price;
       const minAllowed = currentPrice * 0.9;
