@@ -1,5 +1,8 @@
 const Product = require("../models/Product");
 const { validationResult } = require("express-validator");
+const fs = require("fs");
+const path = require("path");
+const PriceChangeLog = require("../models/PriceChangeLog");
 
 // POST /api/products
 exports.createProduct = async (req, res) => {
@@ -83,6 +86,146 @@ exports.getProducts = async (req, res) => {
     });
   } catch (err) {
     console.error("[getProducts] Error:", err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+// GET /api/products/:id
+exports.getProductById = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+
+    res.status(200).json({ success: true, data: product });
+  } catch (err) {
+    console.error("[getProductById] Error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// PUT /api/products/:id
+exports.updateProduct = async (req, res) => {
+  const { name, productCode, price, category, manufactureDate, expiryDate } =
+    req.body;
+
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product)
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+
+    if (String(product.owner) !== String(req.user._id)) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized access" });
+    }
+
+    let shouldLogPriceChange = false;
+    let newPrice;
+
+    // PRICE VALIDATION
+    if (price !== undefined && price !== null) {
+      newPrice = parseFloat(price);
+      const currentPrice = product.price;
+      const minAllowed = currentPrice * 0.9;
+      const maxAllowed = currentPrice * 1.1;
+
+      if (newPrice < minAllowed || newPrice > maxAllowed) {
+        return res.status(400).json({
+          success: false,
+          message: `Price must be within ±10%. Allowed range: ${minAllowed.toFixed(2)} - ${maxAllowed.toFixed(2)}`,
+        });
+      }
+
+      // Check if price was already changed in last 24h
+      const lastChange = await PriceChangeLog.findOne({
+        productId: product._id,
+        userId: req.user._id,
+      }).sort({ changedAt: -1 });
+
+      if (lastChange) {
+        const hours = (new Date() - lastChange.changedAt) / (1000 * 60 * 60);
+        if (hours < 24) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "You can only update the price once every 24 hours for this product.",
+          });
+        }
+      }
+
+      product.price = newPrice;
+      shouldLogPriceChange = true;
+    }
+
+    // IMAGE HANDLING
+    if (req.file) {
+      if (product.image) {
+        const oldImagePath = path.join(__dirname, "..", product.image);
+        fs.unlink(oldImagePath, (err) => {
+          if (err) console.warn("Failed to delete old image:", err.message);
+        });
+      }
+      product.image = `/images/${req.file.filename}`;
+    }
+
+    // Update other fields
+    if (name) product.name = name;
+    if (productCode) product.productCode = productCode;
+    if (category) product.category = category;
+    if (manufactureDate) product.manufactureDate = manufactureDate;
+    if (expiryDate) product.expiryDate = expiryDate;
+
+    await product.save();
+
+    // Only log price change if product was saved
+    if (shouldLogPriceChange) {
+      await PriceChangeLog.create({
+        productId: product._id,
+        userId: req.user._id,
+        newPrice,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: product,
+      message: "Product updated successfully",
+    });
+  } catch (err) {
+    console.error("[updateProduct] Error:", err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// DELETE /api/products/:id
+exports.deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product)
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+
+    // Delete image file if exists
+    if (product.image) {
+      const imagePath = path.join(__dirname, "..", product.image);
+      fs.unlink(imagePath, (err) => {
+        if (err) console.warn("Failed to delete image:", err.message);
+      });
+    }
+
+    await product.deleteOne();
+
+    res
+      .status(200)
+      .json({ success: true, message: "Product deleted successfully" });
+  } catch (err) {
+    console.error("[deleteProduct] Error:", err.message);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };

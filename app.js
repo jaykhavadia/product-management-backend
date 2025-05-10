@@ -10,12 +10,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 // Serve static image files
-app.use("/images", express.static(path.join(__dirname, "images")));
+app.use(
+  "/images",
+  express.static(path.join(__dirname, "images"), {
+    maxAge: 0,
+    etag: false,
+  })
+);
 
 // Routes (placeholder for now)
 app.get("/", (req, res) => {
-  res.send("Server is running");
+  res.send("Server is alive");
 });
+
 
 const authRoutes = require("./routes/authRoutes");
 app.use("/api/auth", authRoutes);
